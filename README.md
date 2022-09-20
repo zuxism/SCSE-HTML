@@ -2,7 +2,7 @@
 
 ## Concept
 
-Everything is organised in sections. Sections have a title and markdown content. This quick guide is one section.
+Everything is organised in sections. Sections have a title and markdown content.
 
 ## Sections
 

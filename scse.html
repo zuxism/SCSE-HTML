@@ -76,6 +76,10 @@
                 
                 
                 _add: function(top=false) {
+                    if (Books.get.selected_book() === '') {
+                        alert('No book is selected');
+                        return;
+                    }
                     let id = (top === true) ? '#add_top' : '#add-bottom';
                     let el = document.querySelector(id).parentNode;
                     let new_section_el = Sections.generate_el();
@@ -177,7 +181,11 @@
                         
                         let title   = do_empty == false ? Sections.get.el.input.title(section_el).value    : '';
                         let content = do_empty == false ? Sections.get.el.input.markdown(section_el).value : '';
-                        
+                        /* 
+                        // za klavanje '|' vo pragrafo
+                        let cursor_point = Sections.get.el.input.markdown(section_el).selectionStart;
+                        content = content.slice(0, cursor_point) + '<span style="display: inline-block; transform: scale(0.3, 1.3);">|</span>' + content.slice(cursor_point);
+                        */
                         
                         const title_anchor = (title_str) => { return title_str === '' ? '' : `<a name="${title_str.replace(/\s/gm, '')}"></a>`; };
                         Sections.get.el.content.title(section_el).innerHTML  = title_anchor(title) + title;
@@ -188,7 +196,16 @@
                         // Generate image markup
                         content = content.replace(/(?<!\40{3,})(?:\40|^)img\[(.*)\]/gm, '<p style="text-align:center;"><img alt="[image broken]" title="$1"></p>');
                         
-                        Sections.get.el.content.markdown(section_el).innerHTML = marked.parse(content);
+                        // do variable replacement
+                        content = content.replace(/(?<!\$)\$(\w+)(#|(?=\W))/g,(match, g1, offset, string) => {
+                                                                        return Variables.get(g1) ? Variables.get(g1) : '';
+                                                                    });
+                        // remove one $ from repeating $ chains in content
+                        content = content.replace(/(?<!\$)\$/g, '');
+                        
+                        content = marked.parse(content);
+                        
+                        Sections.get.el.content.markdown(section_el).innerHTML = content;
                     },
                     
                     // store text from js 'value' into html
@@ -485,13 +502,60 @@
             };
             
             
-            
+        </script>
+        
+        <!-- MARKER:js-variables -->
+        <script type="text/javascript">
+            const Variables = {
+                _vars: new Map(),
+                
+                set: function(k, v) {
+                    return Variables._vars.set(k, v);
+                },
+                
+                get: function(k) {
+                    return Variables._vars.get(k);
+                },
+                
+                _vars_el: null,
+                
+                begin: function() {
+                    Variables._vars_el = document.querySelector('textarea#variables');
+                    
+                    Variables._vars_el.onblur = function() {
+                        Variables._vars.clear();
+                        
+                        let txt = this.value;
+                        
+                        regex = '^\\$([a-z_0-9]+)\\s*=(.*)$';
+                        
+                        txt = txt.match(new RegExp(regex, 'gmi'));
+                        
+                        for (let line of txt) {
+                            
+                            try {
+                                let match = line.match(new RegExp(regex, 'i'));
+                                Variables._vars.set(match[1], match[2]);
+                            }
+                            catch { }
+                        }
+                        console.log(Variables._vars);
+                    
+                        Sections.populate();
+                    };
+                    var event = document.createEvent('MouseEvents');
+                    event.initEvent('blur', true, true);
+                    Variables._vars_el.dispatchEvent(event);
+                },
+            };
         </script>
         
         <!-- MARKER:js-jsjs -->
         <script type="text/javascript">
             window.addEventListener("load", function() {
                 Images.begin();
+                
+                Variables.begin();
                 
                 Sections.begin();
                 
@@ -590,8 +654,8 @@
                         el.innerHTML = el.innerHTML.replace(
                                                                 /CSS_INHERIT\((.*?)\);/g
                                                                 ,
-                                                                (match, name, offset, string) => {
-                                                                    return rule_map.get(name) ? rule_map.get(name) : '';
+                                                                (match, name_group, offset, string) => {
+                                                                    return rule_map.get(name_group) ? rule_map.get(name_group) : '';
                                                                 }
                                                             );
                     }
@@ -728,8 +792,12 @@
         
         <!-- MARKER:css-section -->
         <style>
+            body {
+                background-color: var(--color-light);
+            }
+            
             .button {
-                background-color: #CDCDCD;
+                background-color: var(--color-medium);
                 cursor: pointer;
                 display: flex;
                 align-items: center;
@@ -799,7 +867,8 @@
                 
                 CSS_INHERIT(btn);
                 border: none;
-                border-right: 1px solid black;
+                border-right: var(--border);
+                border-right-width: 0.5px;
                 background-color: #00000000;
             }
             
@@ -808,7 +877,7 @@
                 CSS_INHERIT(g-btn);
             }
             
-            .section > label[for^="editing"]:after {
+            .section > label[for^="editing"]:hover:after {
                 content: 'Edit';
             }
             
@@ -917,7 +986,7 @@
             }
             
             table, td, th {
-                border: 1px solid black;
+                border: 1px solid var(--color-dark);
             }
             table {
                 margin: var(--sapced) auto;
@@ -928,6 +997,11 @@
             
             p > img {
                 max-width: 100%;
+            }
+            
+            code {
+              background-color: #00000018;
+              padding: 0.1em;
             }
         </style>
         
@@ -1015,9 +1089,9 @@
                 bottom: 0;
                 
                 border-top: var(--border);
-                border-color: white;
-                background-color: black;
-                color: white;
+                border-color: var(--color-light);
+                background-color: var(--color-dark);
+                color: var(--color-light);
             }
             
             #chk-conf {
@@ -1039,7 +1113,7 @@
                 flex-direction: row;
                 width: 22%;
                 border-right: var(--border);
-                border-color: white;
+                border-color: var(--color-light);
                 
                 display: flex;
                 flex-direction: column;
@@ -1212,11 +1286,17 @@
                     <label for="conf-images">
                         Images
                     </label>
+                    <label for="conf-variables">
+                        Variables
+                    </label>
                     <label for="conf-saving">
                         Saving
                     </label>
                     <label for="conf-printing">
                         Printing
+                    </label>
+                    <label for="conf-misc">
+                        Other options
                     </label>
                 </div>
                 <div class="tab-content">
@@ -1245,6 +1325,11 @@
                         </div>
                     </div>
                     
+                    <input name="conf" id="conf-variables" type="radio">
+                    <div>
+                        <textarea id="variables" style="height: 100%; width: 100%; resize: none; border: none; padding: var(--sapced);">$example_var=CONTENT</textarea>
+                    </div>
+                    
                     <input name="conf" id="conf-saving" type="radio">
                     <div>
                         <input type="checkbox" id="depopulate_sections_on_save"></input> Empty generated markdown to save space
@@ -1253,6 +1338,11 @@
                     <input name="conf" id="conf-printing" type="radio">
                     <div>
                         <button onclick="window.print();" style="height: 3em; aspect-ratio: 3;">Print</button>
+                    </div>
+                    
+                    <input name="conf" id="conf-misc" type="radio">
+                    <div>
+                        Title: <input oninput="document.querySelector('title').innerHTML = this.value; this.setAttribute('value', this.value) " value="Self Contained Self Editable HTML"></input>
                     </div>
                     
                 </div>
@@ -1282,7 +1372,7 @@
                     <div>
                         <input type="text" value="Self Contained Self Editable HTML">
                         <textarea data-name="scse">
-This is a self contained file/app that uses html, css, and js with the library marked to enable simple editing, saving, and printing of "documents".
+This is a self contained file/app that uses html, css, and js with the library marked to enable simple editing, saving, and printing of documents.
 
 Read more bellow to get a better understanding of how this works.
 </textarea>
@@ -1427,15 +1517,17 @@ Any changes are not saved in any way untill pressing Ctrl + s.
                     <div>
                         <input type="text" value="Images">
                         <textarea data-name="simages">
-Adding images is done with Ctrl + i.
+# Manging
 
-The markdown format is
+Adding, removing, and renaming images is done through the logo options drop down, under the 'Images' tab.
 
-    img[]
+# Usage
 
-and will appear as
+To use the image 'img-example', in the raw content write ```    img[img-example]```, 
+the image will appear as
 
 img[img-example]
+
 </textarea>
                     </div>
                 </div>
@@ -1462,6 +1554,58 @@ img[img-example]
 To print (to a printer or as PDF) press Ctrl + p. This will open the browsers print dialog.
 
 When printing the selected book, the title occupies the first page and appears framed. Also, each section begins on a new page.
+</textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div><!-- MARKER:sec-print -->
+            <div class="section" id="sprinting" data-book="bdefault">
+                <input type="checkbox" id="editing-svariables">
+                <div>
+                    <h1></h1>
+                    <div></div>
+                </div>
+                <label for="editing-svariables"></label>
+                <div>
+                    <div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                    </div>
+                    <div>
+                        <input type="text" value="Variables">
+                        <textarea data-name="svariables">
+Variables contain text that replaces them in the parsed content, useful for snippets of frequently repeating text.
+
+# Defining
+
+They can be edited from the logo options drop down, under 'Variables' tab. They are defined in the form of ```$$[variable name]=[content]```. The name of a variable can only contain lowercase letters, numbers, and underscore(_).  
+**e.g.**  
+To define a variable named 'example_var' you should write  
+```$$example_var=CONTENT```  
+*Note: The variable content starts immediately after the = and ends with the new line, this **includes** any white space.*
+
+# Usage
+
+To use the variable 'example_var' write ```$$example_var``` in the raw content not immediately preceded by a $$ and followed by a non word character. To join with the next word end the variable name with # instead of a non word character.  
+**e.g.**  
+Raw | Parsed
+- | -
+```Using $$example_var.```       | Using $example_var.
+```Using $$$example_var.```      | Using $$example_var.
+```joined$$example_var#joined``` | joined$example_var#joined
+```jside$$example_var nonjside```| jside$example_var nonjside
+
+
+# Note about $$
+
+Since the start of a variable name is denoted by a dollar sign ($$) every chain of $$ in the content will have one of them removed. Single $$ in the raw content will be omitted in the parsed content.  
+**e.g.**  
+$$ -> *nothing*  
+$$$ -> $$  
+$$$$$ -> $$$$
 </textarea>
                     </div>
                 </div>

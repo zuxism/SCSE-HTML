@@ -3,6 +3,8 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         
+        <meta name="author" content="">
+        
         <title>Self Contained Self Editable HTML</title>
         
         <script type="text/javascript">
@@ -42,17 +44,66 @@
                     pom.click();
                 }
             }
+            
+            function selfstore(el) {
+                if (el.matches('input[type="checkbox"]')) {
+                    if (el.checked === true)
+                        el.setAttribute('checked', 'checked');
+                    else
+                        el.removeAttribute('checked');
+                }
+                
+                if (el.matches('input[type="text"], input:not([type])'))
+                    el.setAttribute('value', el.value);
+                
+                if (el.matches('textarea'))
+                    el.innerHTML = el.value;
+            }
+            
+            function set_title() {
+                let new_title = document.querySelector('input#title-edit').value;
+                
+                if (new_title) {
+                    document.querySelector('title').innerHTML = new_title;
+                }
+                else {
+                    document.querySelector('title').innerHTML = Books.get.selected_book_name();
+                }
+            }
+            
+            function set_author() {
+                let new_author = document.querySelector('input#author-edit').value;
+                new_author = new_author ?? '';
+                
+                document.querySelector('meta[name="author"]').setAttribute('content', new_author);
+                document.querySelector('a#book-print-author').innerHTML = new_author;
+            }
+            
+            window.onbeforeunload = function(){
+              return 'Are you sure you want to leave?';
+            };
         </script>
         
         <!-- MARKER:js-sections -->
         <script type="text/javascript">
             const Sections = {
-                generate_el: function() {
-                    let id = 's' + Math.random().toString().slice(2); //TODO// add check if already existing
+                generate_el: function({title='Title', content='Empty', id, book}={}) {
+                    if (id === undefined) {
+                        let existing = null;
+                        do {
+                            id = 's' + Math.random().toString().slice(2);
+                            existing = Sections.get.el.from_id(id);
+                        } while (existing !== null);
+                    }
+                    
+                    if (book === undefined) {
+                        book = Books.get.selected_book();
+                    }
+                    
                     return html_str_to_el(`
                         <div>
-                            <div class="section" id="${id}" data-book="${Books.get.selected_book()}">
-                                <input type="checkbox" id="editing-${id}" checked>
+                            <div class="section" id="${id}" data-book="${book}">
+                                <input type="checkbox" id="editing-${id}">
                                 <div>
                                     <h1></h1>
                                     <div></div>
@@ -63,10 +114,11 @@
                                         <div></div>
                                         <div></div>
                                         <div></div>
+                                        <div></div>
                                     </div>
                                     <div>
-                                        <input type="text" value="Title">
-                                        <textarea data-name="${id}">Empty</textarea>
+                                        <input type="text" value="${title}">
+                                        <textarea>${content}</textarea>
                                     </div>
                                 </div>
                             </div>
@@ -75,32 +127,66 @@
                 },
                 
                 
-                _add: function(top=false) {
+                _add: function(before_el, {title='Title', content='Empty', id, book, open_edit=false}={}) {
                     if (Books.get.selected_book() === '') {
                         alert('No book is selected');
                         return;
                     }
-                    let id = (top === true) ? '#add_top' : '#add-bottom';
-                    let el = document.querySelector(id).parentNode;
-                    let new_section_el = Sections.generate_el();
-                    el.parentNode.insertBefore(new_section_el, (top === true) ? el.nextSibling : el);
+                    
+                    if (before_el.parentElement !== document.body) {
+                        alert('Invalid element');
+                        return;
+                    }
+                    
+                    let new_section_el = Sections.generate_el({title:title, content:content, id:id, book:book});
+                    
+                    document.body.insertBefore(new_section_el, before_el);
                     
                     Sections.content.load(new_section_el);
                     Sections.add_handlers(new_section_el);
+                    if (open_edit === true)
+                        Sections.get.el.edit_button(new_section_el).click();
+                    if (book !== undefined && book !== Books.get.selected_book())
+                        new_section_el.classList.add('HBB');
                 },
-                add_top: function() {
-                    Sections._add(true);
+                add_top: function({title='Title', content='Empty', id, book, open_edit=true}={}) {
+                    let before_el = document.querySelector('#add_top').parentElement.nextSibling;
+                    Sections._add(before_el, {title:title, content:content, id:id, book:book, open_edit:open_edit});
                 },
-                add_bottom: function() {
-                    Sections._add(false);
+                add_bottom: function({title='Title', content='Empty', id, book, open_edit=true}={}) {
+                    let before_el = document.querySelector('#add-bottom').parentElement;
+                    Sections._add(before_el, {title:title, content:content, id:id, book:book, open_edit:open_edit});
+                },
+                
+                duplicate: function(el) {
+                    let title = Sections.get.title(el);
+                    let content = Sections.get.content(el);
+                    
+                    Sections._add(Sections.get.el.section_container(el), {title:title, content:content});
                 },
                 
                 get: {
-                    name: function(el) {
+                    id: function(el) {
                         return Sections.get.el.section(el).getAttribute('id');
                     },
                     
+                    book: function(el) {
+                        return Sections.get.el.section(el).getAttribute('data-book');
+                    },
+                    
+                    title: function(el) {
+                        return Sections.get.el.input.title(el).value;
+                    },
+                    
+                    content: function(el) {
+                        return Sections.get.el.input.markdown(el).value;
+                    },
+                    
                     el: {
+                        from_id: function(id) {
+                            return document.querySelector(`.section#${id}`);
+                        },
+                        
                         section: function(el) {
                             if (el.classList.contains('section'))
                                 return el;
@@ -120,6 +206,14 @@
                         
                         section_container(el) {
                             return Sections.get.el.section(el).parentElement;
+                        },
+                        
+                        check_box(el) {
+                            return Sections.get.el.section(el).querySelector(`:scope > input[type="checkbox"]`);
+                        },
+                        
+                        edit_button(el) {
+                            return Sections.get.el.section(el).querySelector(`:scope > label[for^="editing"]`);
                         },
                         
                         input: {
@@ -165,11 +259,18 @@
                                                                                        > :nth-child(2)`);
                             },
                             
-                            down: function(el) {
+                            duplicate: function(el) {
                                 return Sections.get.el.section(el).querySelector(`:scope
                                                                                    > div:nth-of-type(2)
                                                                                      > div:nth-of-type(1)
                                                                                        > :nth-child(3)`);
+                            },
+                            
+                            down: function(el) {
+                                return Sections.get.el.section(el).querySelector(`:scope
+                                                                                   > div:nth-of-type(2)
+                                                                                     > div:nth-of-type(1)
+                                                                                       > :nth-child(4)`);
                             },
                         },
                     }, // el
@@ -181,29 +282,102 @@
                         
                         let title   = do_empty == false ? Sections.get.el.input.title(section_el).value    : '';
                         let content = do_empty == false ? Sections.get.el.input.markdown(section_el).value : '';
-                        /* 
-                        // za klavanje '|' vo pragrafo
-                        let cursor_point = Sections.get.el.input.markdown(section_el).selectionStart;
-                        content = content.slice(0, cursor_point) + '<span style="display: inline-block; transform: scale(0.3, 1.3);">|</span>' + content.slice(cursor_point);
-                        */
                         
-                        const title_anchor = (title_str) => { return title_str === '' ? '' : `<a name="${title_str.replace(/\s/gm, '')}"></a>`; };
+                        if (Sections.get.el.input.markdown(section_el) == document.activeElement && Sections._fw_edit === false) {
+                            
+                            const the_input = Sections.get.el.input.markdown(section_el);
+                            
+                            let start = the_input.selectionStart;
+                            let end   = the_input.selectionEnd;
+                            
+                            /* /
+                            content = content.slice(0, start) + '<div id="start-sel" style="display:none;">AAA</div>' + content.slice(start, end) + '<div id="end-sel" style="display:none;"></div>' + content.slice(end);
+                            /**/
+                            
+                            /* insert char /
+                            // normal vs selected text
+                            if (start == end) {
+                                content = content.slice(0,  end) + '_' + content.slice(end);
+                            }
+                            else {
+                                content = content.slice(0, start) + '>' + content.slice(start, end) + '<' + content.slice(end);
+                            }
+                            /*  */
+                            
+                            /* Replacement chars /
+                            // normal vs selected text
+                            if (start == end) {
+                                end += 1;
+                                content = content.slice(0,  end) + '\u034d\u032d' + content.slice(end);
+                            }
+                            else {
+                                start += 1;
+                                content = content.slice(0, start) + '\u0355' + content.slice(start, end) + '\u0354' + content.slice(end);
+                            }
+                            /*  */
+                            
+                            /* Replacement chars 2 /
+                            let marker = '\u0331\u032d';
+                            // normal vs selected text
+                            if (start == end) {
+                                end += 1;
+                                content = content.slice(0,  end) + marker + content.slice(end);
+                            }
+                            else {
+                                content = content.slice(0, start) + content.slice(start, end).split('').map((i) => { return i+marker; }).join('') + content.slice(end);
+                            }
+                            /*  */
+                            
+                            /* span /
+                            content = content.trimEnd() + ' ';
+                            
+                            let additional_class = '';
+                            
+                            // normal vs selected text
+                            if (start == end)
+                                end += 1;
+                            else
+                                additional_class += 'selection ';
+                            
+                            // Handle blank lines
+                            let prev_char = content.slice(0, start).slice(-1);
+                            let current_char = content.slice(start, end);
+                            let next_char = content.slice(end).slice(0, 1);
+                            
+                            let pre_char = '';
+                            let pos_char = '';
+                            
+                            if (prev_char === '\n' && current_char === '\n') {
+                                pre_char = '\n';
+                            }
+                            
+                            if (current_char === '\n') {
+                                pos_char = '\n';
+                            }
+                            
+                            // don't show selection when it contains blank lines
+                            if (content.slice(start, end).indexOf('\n\n') === -1)
+                                content = content.slice(0, start) + `${pre_char}<span id="caret" class="${additional_class}">` + content.slice(start, end) + `</span>${pos_char}` + content.slice(end);
+                            /*  */
+                        }
+                        
+                        const title_anchor = (title_str) => { return title_str === '' ? '' : `<a name="${title_str.replace(/\s/gm, '-')}"></a>`; };
                         Sections.get.el.content.title(section_el).innerHTML  = title_anchor(title) + title;
                         
                         // h1 to h2, h2 to h3 ...
                         content = content.replace(/^#/gm, '##');
                         
+                        // do variable replacement
+                        content = Templates.do_replacement(content);
+                        
                         // Generate image markup
                         content = content.replace(/(?<!\40{3,})(?:\40|^)img\[(.*)\]/gm, '<p style="text-align:center;"><img alt="[image broken]" title="$1"></p>');
                         
-                        // do variable replacement
-                        content = content.replace(/(?<!\$)\$(\w+)(#|(?=\W))/g,(match, g1, offset, string) => {
-                                                                        return Variables.get(g1) ? Variables.get(g1) : '';
-                                                                    });
-                        // remove one $ from repeating $ chains in content
-                        content = content.replace(/(?<!\$)\$/g, '');
-                        
                         content = marked.parse(content);
+                        content = content.replace(
+                            /<thead>\s*<tr>\s*(<th(?: align=[^>]*?)?>\s*<\/th>\s*)*\s*<\/tr>\s*<\/thead>/gs,
+                            ''
+                        ); // fix empty table heads
                         
                         Sections.get.el.content.markdown(section_el).innerHTML = content;
                     },
@@ -213,25 +387,75 @@
                         let section_el = Sections.get.el.section(el);
                         
                         // store title
-                        let title_input_el = Sections.get.el.input.markdown(section_el);
+                        let title_input_el = Sections.get.el.input.title(section_el);
                         title_input_el.setAttribute('value', title_input_el.value);
                         
                         // store markdown
                         let markdown_input_el = Sections.get.el.input.markdown(section_el);
+                        markdown_input_el.value = markdown_input_el.value; // fixes first onclick bug
                         markdown_input_el.innerHTML = markdown_input_el.value;
                         
                         Sections.content.load(section_el);
                     },
                 },// content
                 
+                _fw_edit: false,
+                fw_edit: function(edit_fw) {
+                    let css_fw = document.querySelector('style#css-fullwidth');
+                    let css_rd = document.querySelector('style#css-third');
+                    if (edit_fw === true) {
+                        Sections._fw_edit = true;
+                        css_fw.removeAttribute('media');
+                        css_rd.setAttribute('media', "max-width: 1px");
+                    }
+                    if (edit_fw === false) {
+                        Sections._fw_edit = false;
+                        css_fw.setAttribute('media', "max-width: 1px");
+                        css_rd.removeAttribute('media');
+                    }
+                    Sections.begin();
+                },
+                
                 add_handlers: function(el) {
                     let section_el = Sections.get.el.section(el);
                     
-                    Sections.get.el.input.title(section_el).oninput = 
-                    Sections.get.el.input.markdown(section_el).oninput =
+                    let txt_update_fn =
                     function() {
                         Sections.content.store(this);
                     };
+                    
+                    fw_fn = null;
+                    rd_fn = null;
+                    
+                    if (Sections._fw_edit === true) {
+                        fw_fn = txt_update_fn;
+                        rd_fn = null;
+                    }
+                    else {
+                        fw_fn = null;
+                        rd_fn = txt_update_fn;
+                    }
+                    
+                    section_el.querySelector('label[for^="editing"]').onclick = function () {
+                        const section_el = Sections.get.el.section(this);
+                        const chk_el = section_el.querySelector('input[type="checkbox"]')
+                        if (chk_el.checked === false && Sections._fw_edit === true) {
+                            section_el.style.height = section_el.offsetHeight + 'px';
+                        }
+                        else {
+                            section_el.style.height = 'auto';
+                        }
+                    };;
+                    
+                    Sections.get.el.input.title(section_el).onblur = fw_fn;
+                    Sections.get.el.input.markdown(section_el).onblur = fw_fn;
+                    
+                    Sections.get.el.input.title(section_el).oninput =
+                    Sections.get.el.input.markdown(section_el).oninput =
+                    //Sections.get.el.input.markdown(section_el).onkeyup = // for placing caret
+                    //Sections.get.el.input.markdown(section_el).onclick = // for placing caret // causes first onclick bug
+                    //Sections.get.el.input.markdown(section_el).onblur =  // for placing caret
+                    rd_fn;
                     
                     Sections.get.el.buttons.up(section_el).onclick = function() {
                         let el = Sections.get.el.section_container(this);
@@ -244,6 +468,9 @@
                         let after_el = el.nextElementSibling;
                         if (after_el.querySelector(':first-child').classList.contains('section'))
                             el.parentNode.insertBefore(el, after_el.nextElementSibling);
+                    };
+                    Sections.get.el.buttons.duplicate(section_el).onclick = function() {
+                        Sections.duplicate(this);
                     };
                     Sections.get.el.buttons.del(section_el).onclick = function() {
                         let el = Sections.get.el.section_container(this);
@@ -271,6 +498,294 @@
                     }
                 },
             };
+            
+        </script>
+        
+        <script type="text/javascript" id="js-onetime">
+            // MARKER:js-onetime
+            // add default text
+            window.addEventListener('load', function() {
+                //TODO// add book from code
+                /////////////////////
+                Sections.add_bottom({
+                    title:'Self Contained Self Editable HTML',
+                    id:'sscse',
+                    book:'bdefault',
+                    open_edit:false,
+                    content:`
+This is a self contained file/app that uses html, css, and js with the library marked to enable simple editing, saving, and printing of documents.
+
+Read more bellow to get a better understanding of how this works.
+`
+                });
+                
+                /////////////////////
+                Sections.add_bottom({
+                    title:'Books',
+                    id:'sbooks',
+                    book:'bdefault',
+                    open_edit:false,
+                    content:`
+The main unit of this app is a book.
+
+The selected book is at the top of the page. The currently selected book sould be 'Quick guide'.
+
+You can change name, delete, or add a new book using the buttons to the right of the selected book.
+
+Depending on the selected book sections for that book will be showed.
+`
+                });
+                
+                /////////////////////
+                Sections.add_bottom({
+                    title:'Sections',
+                    id:'ssections',
+                    book:'bdefault',
+                    open_edit:false,
+                    content:`
+Everything is organized in sections. Sections have a title and markdown content. So far this is the third section. The others before being 'Books' and the intro.
+
+# Main Title
+
+The main title is the first thing in the section and is underlined by a double line.
+
+# Markdown Content
+
+Everything under the double lines of the title is the markdown content
+
+# Editing
+
+## Creating
+
+To add sections press the top or bottom '+' buttons.
+
+## Edit area
+
+To open the edit area click on the 'Edit' button on the right side of sections.
+
+### Deleting
+
+After opening the edit area press the '🗑' button. After deleting recovery is not possible.
+
+### Title
+
+The title is edited as a single line string at the top of the edit area.
+
+### Content
+
+The content is edited as markdown in a multi line textbox in the edit area below the title.
+
+## Moving
+
+To move sections use the up/down arrow buttons in the edit area.
+
+
+`
+                });
+                
+                /////////////////////
+                Sections.add_bottom({
+                    title:'Saving',
+                    id:'ssaving',
+                    book:'bdefault',
+                    open_edit:false,
+                    content:`
+Saving is done with Ctrl + s. You can name the html file anything as long as it ends with '.html'. The resulting file will have the content and everything necesary to be opened in a browser.
+
+Any changes are not saved in any way untill pressing Ctrl + s.
+`
+                });
+                
+                /////////////////////
+                Sections.add_bottom({
+                    title:'Images',
+                    id:'simages',
+                    book:'bdefault',
+                    open_edit:false,
+                    content:`
+# Managing
+
+Adding, removing, and renaming images is done through the logo options drop down, under the 'Images' tab.
+
+# Usage
+
+To use the image 'img-example', in the raw content write &#96;&#96;&#96;    img[img-example]&#96;&#96;&#96;, 
+the image will appear as
+
+img[img-example]
+
+`
+                });
+                
+                /////////////////////
+                Sections.add_bottom({
+                    title:'Printing',
+                    id:'sprinting',
+                    book:'bdefault',
+                    open_edit:false,
+                    content:`
+To print (to a printer or as PDF) press Ctrl + p. This will open the browsers print dialog.
+
+When printing the selected book, the title occupies the first page and appears framed. Also, each section begins on a new page.
+`
+                });
+                
+                /////////////////////
+                Sections.add_bottom({
+                    title:'Templates',
+                    id:'stemplates',
+                    book:'bdefault',
+                    open_edit:false,
+                    content:`
+Templates contain text that replaces them in the parsed content, useful for snippets of frequently repeating text.
+
+# Defining
+
+They can be edited from the logo options drop down, under 'Templates' tab.
+
+They are defined in the form of  
+&#96;&#96;&#96;
+$$[template name][optional parameters]=[content];
+&#96;&#96;&#96;
+## $$ - Start of template definition
+
+Each definition begins with a single $$.
+
+## Template name
+
+The name of a template can contain letters, numbers, and underscore(_).
+
+## Optional parameters
+
+It is possible to optionally pass parameters to be substituted in the content of the template. Parameters are given in parentheses &#96;&#96;&#96;(...)&#96;&#96;&#96; after the template name. They should be specified in the format &#96;&#96;&#96;[name]=[value]&#96;&#96;&#96; separated by a comma &#96;&#96;&#96;,&#96;&#96;&#96;.
+
+## Content
+
+The content starts after the first '=' after the template name or parameters if present. The end of the content is denoted with a single ';'. Using ';' in the content is done by writing ';;'.
+
+
+
+# Usage
+
+Templates in the content are used in the form of
+
+&#96;&#96;&#96;
+$$[template name][optional parameters][#]
+&#96;&#96;&#96;
+
+## &#96;&#96;&#96;#&#96;&#96;&#96; end
+
+Templates can be ended with any non word character which is not replaced by the template. Or with &#96;&#96;&#96;#&#96;&#96;&#96; which does get replaced by the template, used for concatenating with word characters.
+
+# Note about &#96;&#96;&#96;$$&#96;&#96;&#96;
+
+Since the start of a template name is denoted by a single &#96;&#96;&#96;$$&#96;&#96;&#96; every chain of &#96;&#96;&#96;$$&#96;&#96;&#96; in the content will have one of them removed.
+
+**e.g.**  
+$$ -> *template*  
+$$$ -> $$  
+$$$$$ -> $$$$
+
+This especially affects template contents. Since the start of templates is indicated by a single &#96;&#96;&#96;$$&#96;&#96;&#96;, for any other use double &#96;&#96;&#96;$$&#96;&#96;&#96; should be used.
+
+# Examples
+
+## Basic
+
+Basic template definition is as follows:
+&#96;&#96;&#96;
+$$some_name=Content;
+&#96;&#96;&#96;
+
+&#96;&#96;&#96;
+It's $$some_name.
+&#96;&#96;&#96;
+
+It's $some_name.
+
+
+## Joined
+
+To join with other words use # at the end.
+
+&#96;&#96;&#96;
+Very$$some_name#astic.
+&#96;&#96;&#96;
+
+*Very$some_name#astic.*
+
+
+## Multiline
+
+&#96;&#96;&#96;
+$$multiline=  
+Multi line  
+content  
+;
+&#96;&#96;&#96;
+
+&#96;&#96;&#96;
+=> $$multiline <=
+&#96;&#96;&#96;
+
+=> $multiline <=
+
+
+## Parameters
+
+&#96;&#96;&#96;
+$$multiline_p(d=default value,e=,u)=  
+d:{d}  
+e:{e}  
+u:{u}  
+;
+&#96;&#96;&#96;
+
+If not given when called:
+- d - equals 'default value' by default
+- e - empty string '' by default
+- u - undefined
+
+### Without parameters
+
+&#96;&#96;&#96;
+=> $$multiline_p <=
+&#96;&#96;&#96;
+
+=> $multiline_p <=
+
+
+### With empty parameters
+
+&#96;&#96;&#96;
+=> $$multiline_p() <=
+&#96;&#96;&#96;
+
+=> $multiline_p() <=
+
+
+### With given parameters
+
+&#96;&#96;&#96;
+=> $$multiline_p(d=1,e=2,u=3) <=
+&#96;&#96;&#96;
+
+=> $multiline_p(d=1,e=2,u=3) <=
+
+
+### With partial parameters
+
+&#96;&#96;&#96;
+=> $$multiline_p(e=ppp) <=
+&#96;&#96;&#96;
+
+=> $multiline_p(e=ppp) <=
+
+`
+                });
+                
+                document.querySelector("#js-onetime").remove();
+            });
         </script>
         
         <!-- MARKER:js-books -->
@@ -284,7 +799,8 @@
                     },
                     
                     selected_book_name: function() {
-                        return Books.get.el.book_sel().querySelector('*[selected]').innerHTML;
+                        let selected = Books.get.el.book_sel().querySelector('*[selected]');
+                        return selected ? selected.innerHTML : '';
                     },
                     
                     el: {
@@ -296,6 +812,10 @@
                             return document.querySelector('select#active-book');
                         }
                     },
+                },
+                
+                add_book: function(name, id) {
+                    
                 },
                 
                 begin: function() {
@@ -310,20 +830,37 @@
                             else
                                 throw e;
                         }
-                        Books.get.el.book_sel().querySelector(`[value=${Books.get.selected_book()}]`).setAttribute('selected', 'selected');
                         
-                        Books.get.el.print_title().innerHTML = Books.get.selected_book_name();
-                        
-                        for (const section_el of document.querySelectorAll('.section')) {
-                            if (section_el.getAttribute('data-book') === Books.get.selected_book())
-                                Sections.get.el.section_container(section_el).classList.remove('HBB');
-                            else
-                                Sections.get.el.section_container(section_el).classList.add('HBB');
+                        try {
+                            Books.get.el.book_sel().querySelector(`[value=${Books.get.selected_book()}]`).setAttribute('selected', 'selected');
+                            
+                            Books.get.el.print_title().innerHTML = Books.get.selected_book_name();
+                            
+                            for (const section_el of document.querySelectorAll('.section')) {
+                                if (section_el.getAttribute('data-book') === Books.get.selected_book())
+                                    Sections.get.el.section_container(section_el).classList.remove('HBB');
+                                else
+                                    Sections.get.el.section_container(section_el).classList.add('HBB');
+                            }
                         }
+                        catch (e) {
+                            if (e instanceof DOMException) {
+                                // do nothing
+                            }
+                            else
+                                throw e;
+                        }
+                        
+                        
+                        set_title();
                     });
                     Books.get.el.book_sel().dispatchEvent(new Event('change'));
                     
                     document.querySelector('button#edit-book').addEventListener("click", function() {
+                        if (Books.get.selected_book() === '') {
+                            alert('No book is selected');
+                            return;
+                        }
                         let new_name = prompt('Enter new name');
                         if (new_name === null || new_name === '')
                             return;
@@ -334,6 +871,10 @@
                     });
                     
                     document.querySelector('button#delete-book').addEventListener("click", function() {
+                        if (Books.get.selected_book() === '') {
+                            alert('No book is selected');
+                            return;
+                        }
                         if (prompt_destructive_delete() === true) {
                             for (const section_el of document.querySelectorAll('.section')) {
                                 if (section_el.getAttribute('data-book') === Books.get.selected_book())
@@ -364,9 +905,9 @@
             const Images = {
                 _blob_el: null,
                 
-                _prompt_name: function () {
+                _prompt_name: function (prev_title) {
                     //let 
-                    title = prompt('Enter image title\n* lowercase a-z only');
+                    title = prompt('Enter image title\n* lowercase a-z only', prev_title);
                     
                     if (title === null)
                         return '';
@@ -374,8 +915,11 @@
                     title = title.split('').filter((c) => {
                         return (  
                                    (
-                                       (c.charCodeAt(0) >= 'a'.charCodeAt(0)) &&
-                                       (c.charCodeAt(0) <= 'z'.charCodeAt(0))
+                                       (
+                                           (c.charCodeAt(0) >= 'a'.charCodeAt(0)) &&
+                                           (c.charCodeAt(0) <= 'z'.charCodeAt(0))
+                                       ) ||
+                                       (c.charCodeAt(0) === '-'.charCodeAt(0))
                                    )
                                    === true
                                );
@@ -397,15 +941,11 @@
                 },
                 
                 add: function() {
-                    let fucused_textarea_el = null;
-                    fucused_textarea_el = document.querySelector('textarea:focus');
-                    
                     document.querySelector("#add-image").onchange = function() {
                         const reader = new FileReader();
                         reader.addEventListener("load", () => {
                             const uploaded_image = reader.result;
                             
-                            ////////
                             let title = Images._prompt_name();
                             if (title === '')
                                 return null;
@@ -413,16 +953,6 @@
                             Images._blob_el.innerHTML = `img[title="${title}"] { content: var(--data); background-image: var(--data); --data: url(${uploaded_image}); }\n`
                                                       + Images._blob_el.innerHTML;
                             Images.el.card.add(title);
-                            ///////
-                            
-                            if (fucused_textarea_el !== null) {
-                                const start = fucused_textarea_el.selectionStart;
-                                const end   = fucused_textarea_el.selectionEnd;
-                                const txt   = fucused_textarea_el.value;
-                                fucused_textarea_el.value = txt.slice(0, start) + `img[${title}]` + txt.slice(end, txt.length)
-                                fucused_textarea_el.setSelectionRange(start, start);
-                                Sections.content.load(fucused_textarea_el);
-                            }
                         });
                         reader.readAsDataURL(this.files[0]);
                     
@@ -433,7 +963,8 @@
                 },
                 
                 rename: function(title) {
-                    let new_title = Images._prompt_name();
+                    let new_title = Images._prompt_name(title);
+                    if (new_title === '')
                     if (new_title === '')
                         return null;
                     Images._blob_el.innerHTML = Images._blob_el.innerHTML.replace(RegExp('img\\[title="' + title + '"\\]', 'gm'), `img[title="${new_title}"]`);
@@ -454,14 +985,22 @@
                 },
                 
                 view: function(title) {
-                    console.log('viewing');
                     //window.open(getComputedStyle(this).backgroundImage.slice(5,-2)/*, '_blank'*/)/*.focus();*/;
                     let el = document.querySelector(`img[title="${title}"]`);
-                    let image_opener_el = html_str_to_el(`<a href="${getComputedStyle(el).backgroundImage.slice(5,-2)}" target="_blank" style="/*display: none;*/">zz</a>`);
+                    let image_opener_el = html_str_to_el(`<a href="${getComputedStyle(el).backgroundImage.slice(5,-2)}" target="_blank">zz</a>`);
                     document.querySelector('body').prepend(image_opener_el);
                     image_opener_el.click();
                     image_opener_el.remove();
+                },/*zxxx*/
+                
+                dl: function(title) {
+                    let el = document.querySelector(`img[title="${title}"]`);
+                    let image_dl_el = html_str_to_el(`<a href="${getComputedStyle(el).backgroundImage.slice(5,-2)}" download="${title}">zz</a>`);
+                    document.querySelector('body').prepend(image_dl_el);
+                    image_dl_el.click();
+                    image_dl_el.remove();
                 },
+                
                 
                 el: {
                     card: {
@@ -476,6 +1015,7 @@
                                             <div onclick="Images.view('${title}');"></div>
                                             <div onclick="Images.rename('${title}');"></div>
                                             <div onclick="Images.del('${title}')"></div>
+                                            <div onclick="Images.dl('${title}')"></div>
                                         </div>
                                         <div>
                                             ${title}
@@ -504,49 +1044,113 @@
             
         </script>
         
-        <!-- MARKER:js-variables -->
+        <!-- MARKER:js-templates -->
         <script type="text/javascript">
-            const Variables = {
-                _vars: new Map(),
+            const Templates = {
+                _templates: new Map(),
                 
-                set: function(k, v) {
-                    return Variables._vars.set(k, v);
+                get: function(name, args_str) {
+                    let template = Templates._templates.get(name);
+                    if (template == undefined)
+                        return undefined;
+                    
+                    let val = template.val;
+                    
+                    let args = new Map(template.args);
+                    
+                    let priority_args = new Map();
+                    try {
+                        priority_args = Templates._extract_args(args_str);
+                    }
+                    catch (err) {
+                        if (!(err instanceof TypeError)) throw err;
+                    }
+                    for (const [arg_name, arg_val] of priority_args) {
+                        args.set(arg_name, arg_val);
+                    }
+                    
+                    for (const [arg_name, arg_val] of args.entries()) {
+                        val = val.replace(`{${arg_name}}`, arg_val);
+                    }
+                    
+                    return val;
                 },
                 
-                get: function(k) {
-                    return Variables._vars.get(k);
+                _extract_args: function(args_str) {
+                    args = new Map();
+                    
+                    if (args_str) {
+                        for (let arg_str of args_str.split(/(?<!,),(?!,)/g)) { //split on lone ,
+                            // remove one , from repeating , chains
+                            arg_str = arg_str.replace(/(?<!\,)\,/g, '');
+                            
+                            let match = arg_str.match(/([a-z_0-9]+)(?:=(.*))?/is);
+                            
+                            if (match) // valid arg
+                                args.set(match[1], match[2]);
+                        }
+                    }
+                    
+                    return args;
                 },
-                
-                _vars_el: null,
                 
                 begin: function() {
-                    Variables._vars_el = document.querySelector('textarea#variables');
+                    let templates_scr_el = document.querySelector('textarea#templates');
                     
-                    Variables._vars_el.onblur = function() {
-                        Variables._vars.clear();
+                    templates_scr_el.oninput = function() {
+                        selfstore(this);
+                    };
+                    
+                    templates_scr_el.onblur = function() { 
+                        Templates._templates.clear();
                         
-                        let txt = this.value;
+                        let parts = this.value.split(/(?<!\$)\$(?!\$)/g); // split on lone $
                         
-                        regex = '^\\$([a-z_0-9]+)\\s*=(.*)$';
-                        
-                        txt = txt.match(new RegExp(regex, 'gmi'));
-                        
-                        for (let line of txt) {
+                        for (let potential_template of parts) {
+                            // remove 1 ; from chains but do not remove single ;
+                            potential_template = potential_template.replace(/(?<!;);(?=;)/g, '');
                             
-                            try {
-                                let match = line.match(new RegExp(regex, 'i'));
-                                Variables._vars.set(match[1], match[2]);
+                            let match = potential_template.match(/^([a-z_0-9]+)(?:\s*\((.*?)\))?\s*=(.*);/si); // match until last ;
+                            
+                            if (match) { // valid template
+                                const name = match[1];
+                                const args_s = match[2];
+                                const val  = match[3];
+                                
+                                Templates._templates.set(name, {
+                                    args: Templates._extract_args(args_s),
+                                    val: val
+                                });
                             }
-                            catch { }
                         }
-                        console.log(Variables._vars);
-                    
                         Sections.populate();
                     };
                     var event = document.createEvent('MouseEvents');
                     event.initEvent('blur', true, true);
-                    Variables._vars_el.dispatchEvent(event);
+                    templates_scr_el.dispatchEvent(event);
                 },
+                
+                do_replacement: function(string) {
+                    // do template replacement
+                    string = string.replace(
+                        /(?<!\$)\$(\w+)(?:\s*?\((.*?)\))?(?:$|#|(?=\W))/gs,
+                        (match, g1, g2, offset, string) => {
+                            let name = g1;
+                            let args_s = g2;
+                            
+                            let val = Templates.get(name, args_s);
+                            
+                            val = val ? val : `[undefined $$${name}]`;
+                            
+                            return val;
+                        }
+                    );
+                    
+                    // remove one $ from repeating $ chains in content
+                    string = string.replace(/(?<!\$)\$/g, '');
+                    
+                    return string;
+                }
             };
         </script>
         
@@ -555,11 +1159,13 @@
             window.addEventListener("load", function() {
                 Images.begin();
                 
-                Variables.begin();
+                Templates.begin();
                 
                 Sections.begin();
                 
                 Books.begin();
+                
+                
                 
                 document.onkeydown = function(e) {
                     if (e.ctrlKey && e.key === 's') {
@@ -603,6 +1209,14 @@
         <!-- MARKER:css-vars -->
         <style>
             :root {
+                --color-dark: #1B2523;
+                --color-medium:  #30AE99;
+                --color-light: #F5EEAA;
+                
+                --color-dark: #000f4a;
+                --color-medium:  #EFC7A4;
+                --color-light: #fff6da;
+                
                 --strip-height: 55px;
                 --page-width: 999px;
                 --sapced: 7px;
@@ -664,11 +1278,6 @@
                 for (const style_el of document.querySelectorAll('style, #css-inheritable'))
                     do_replacement(style_el);
             });
-            
-            /*window.onbeforeunload = function(e) {
-                return 'Modifications are not saved please confirm.';
-            };*/
-            
         </script>
         
         <script id="css-inheritable" type="text/plain">
@@ -708,7 +1317,7 @@
             }
         </script>
         
-        <!-- MARKER:css-main -->
+        <!-- section_containercss-main -->
         <style>
 
             * {
@@ -757,6 +1366,7 @@
                 top: 0;
                 height: var(--strip-height);
                 background: var(--color-dark);
+                z-index: 100;
             }
             
             #strip-container > #strip {
@@ -823,10 +1433,15 @@
                 border-top: var(--border);
             }
             
+            #add-bottom > .button {
+                margin-bottom: 50vh;
+            }
+            
             .section {
                 display: flex;
                 flex-direction: row;
                 gap: var(--sapced);
+                min-height: calc((5 * var(--sapced)) + (4 * 2em) + 2px); /* number of buttons + gap between each + 2px for some fucking reason*/
             }
             
             .section > input[type="checkbox"] {
@@ -840,10 +1455,6 @@
                 gap: var(--sapced);
                 overflow-wrap: break-word;
                 max-width: calc(100% - 4.4ch - var(--sapced));
-            }
-            
-            .section > input:checked ~ div:nth-of-type(1) {
-                max-width: calc(100% - 33% - 4.4ch - var(--sapced) - var(--sapced));
             }
             
             .section > div:nth-of-type(1) > h1 {
@@ -870,11 +1481,21 @@
                 border-right: var(--border);
                 border-right-width: 0.5px;
                 background-color: #00000000;
+                
+                padding: calc(2 * var(--sapced) + 2 * 2em - 13px) 0;
             }
             
             .section > label[for^="editing"]:hover,
             .section > input:checked ~ label[for^="editing"] {
                 CSS_INHERIT(g-btn);
+            }
+            
+            
+            .section > label[for^="editing"]:after {
+                position: sticky;
+                /* mahs */
+                top: calc(var(--strip-height) + 2 * var(--sapced) + 2 * 2em - 6px);
+                bottom: calc(2 * var(--sapced) + 2 * 2em);
             }
             
             .section > label[for^="editing"]:hover:after {
@@ -886,17 +1507,12 @@
             }
             
             .section > div:nth-of-type(2) {
-                /*overflow: hidden;
-                width: 0;
-                transition: all 2s ease-out;*/
                 display: none;
             }
             
             .section > input:checked ~ div:nth-of-type(2) {
-                width: 33%;
                 display: flex;
             }
-            
             
             
             
@@ -904,6 +1520,7 @@
                 /*display: flex;*/
                 flex-direction: row;
                 gap: var(--sapced);
+                align-items: center;
             }
             
             
@@ -912,6 +1529,9 @@
                 gap: var(--sapced);
                 flex-direction: column;
                 justify-content: space-between;
+                position: sticky;
+                top: calc(var(--strip-height) + var(--sapced));
+                bottom: var(--sapced);
             }
             
             .section > div:nth-of-type(2) > div:nth-of-type(1) > * {
@@ -926,7 +1546,8 @@
             
             .section > div:nth-of-type(2) > div:nth-of-type(1) > *:nth-child(1):after { content: '▲'; }
             .section > div:nth-of-type(2) > div:nth-of-type(1) > *:nth-child(2):after { content: '🗑'; }
-            .section > div:nth-of-type(2) > div:nth-of-type(1) > *:nth-child(3):after { content: '▼'; }
+            .section > div:nth-of-type(2) > div:nth-of-type(1) > *:nth-child(3):after { content: '⧉'; transform: rotateZ(90deg); }
+            .section > div:nth-of-type(2) > div:nth-of-type(1) > *:nth-child(4):after { content: '▼'; }
             
             
             .section > div:nth-of-type(2) > div:nth-of-type(2) {
@@ -934,6 +1555,7 @@
                 flex-direction: column;
                 gap: var(--sapced);
                 width: 100%;
+                height: 100%;
             }
             
             .section > div:nth-of-type(2) > div:nth-of-type(2) > * {
@@ -944,7 +1566,50 @@
                 flex-grow: 1;
             }
             
+            
+            
+            span#caret {
+                border-left: 1px solid var(--color-dark);
+            }
+            
+            div > span#caret {
+                border-left-style: dotted;
+                position: relative;
+                bottom: 1em;
+            }
+            
+            p > span#caret.selection {
+                background-color: var(--color-medium);
+                border-right: 1px solid var(--color-dark);
+            }
         </style>
+        
+        <!-- MARKER:css-edit-33% -->
+        <style id="css-third">
+            
+            .section > input:checked ~ div:nth-of-type(1) {
+                max-width: calc(100% - 33% - 4.4ch - var(--sapced) - var(--sapced));
+            }
+            
+            .section > input:checked ~ div:nth-of-type(2) {
+                width: 33%;
+            }
+        
+        </style>
+        
+        <!-- MARKER:css-edit-fullwidth -->
+        <style id="css-fullwidth" media="max-width: 1px">
+            
+            .section > input:checked ~ div:nth-of-type(1) {
+                display: none;
+            }
+            
+            .section > input:checked ~ div:nth-of-type(2) {
+                width: 100%;
+            }
+        
+        </style>
+        
         
         <!-- MARKER:css-content -->
         <style>
@@ -992,22 +1657,35 @@
                 margin: var(--sapced) auto;
             }
             td, th {
-                padding: 2px;
+                padding: 2px var(--sapced);
             }
             
             p > img {
                 max-width: 100%;
             }
             
-            code {
+            pre,
+            td > code,
+            p > code {
               background-color: #00000018;
-              padding: 0.1em;
+              padding: 0.05em;
+              padding-top: 0.2em;
+            }
+            
+            .section > div > div > table {
+                max-width: 100%; /*TODO*/
+            }
+            
+            hr {
+                border: none;
+                border-bottom: 1px solid var(--color-dark);
             }
         </style>
         
         <!-- MARKER:css-print -->
         <style>
-            #book-print-title {
+            #book-print-title,
+            #book-print-author {
                 display: none;
             }
             
@@ -1020,20 +1698,33 @@
                     height: 100%;
                 }
                 
-                #book-print-title {
+                #book-print-title,
+                #book-print-author {
                     display: block;
-                    page-break-after: always;
-                    
-                    font-size: 4em;
-                    font-weight: bold;
                     text-decoration: underline;
                     
-                    height: 100%;
+                    height: 50%;
                     display: flex;
-                    align-items: center;
                     justify-content: center;
                     
-                    border: var(--border) !important;
+                    border: var(--border);
+                }
+                
+                #book-print-title {
+                    font-size: 4em;
+                    font-weight: bold;
+                    
+                    align-items: flex-end;
+                    
+                    border-bottom: none;
+                }
+                #book-print-author {
+                    font-size: 1.5em;
+                    
+                    align-items: center;
+                    
+                    border-top: none;
+                    page-break-after: always;
                 }
                 
                 body > div {
@@ -1048,9 +1739,10 @@
                     page-break-before: avoid;
                 }
                 
-                .section > .content {
+                .section > div:nth-of-type(1) {
                     max-width: 100% !important;
                     width: 100%;
+                    display: flex !important;
                 }
                 
                 .noprint,
@@ -1059,7 +1751,10 @@
                 .section > div:nth-of-type(2),
                 #add_top,
                 #add-bottom {
-                    display: none !important;;
+                    display: none !important;
+                }
+                @page {
+                    background-color: red;
                 }
                 /*
                 @page :first {
@@ -1085,6 +1780,7 @@
             #conf {
                 display: none;
                 position: fixed;
+                z-index: 50;
                 top: var(--strip-height);
                 bottom: 0;
                 
@@ -1150,8 +1846,21 @@
                 height: 100%;
             }
             
+            
+            /***********/
+            #conf-misc + div > table {
+                border-spacing: 10px;
+            }
+            #conf-misc + div > table td {
+                border-bottom: 1px solid var(--color-light);
+                text-align: center;
+            }
+            #conf-misc + div > table td:nth-of-type(1) {
+                text-align: right;
+            }
         </style>
         
+        <!-- MARKER:css-conf-img -->
         <style>
             #conf-images + div {
                 display: flex;
@@ -1224,7 +1933,7 @@
                 align-items: flex-start;
                 justify-content: center;
                 gap: var(--sapced);
-                aspect-ratio: 1/3.2;
+                aspect-ratio: 1/4.3;
             }
             
             .image-edit > div:nth-of-type(2) > div:nth-of-type(1) > div {
@@ -1238,22 +1947,21 @@
             .image-edit > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1):after { content: '👁' }
             .image-edit > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2):after { content: '🖉' }
             .image-edit > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(3):after { content: '🗑' }
+            .image-edit > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(4):after { content: '⇓'; text-decoration: underline; }
             
-            .image-edit > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1):hover:after { content: 'View' }
-            .image-edit > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2):hover:after { content: 'Rename' }
-            .image-edit > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(3):hover:after { content: 'Delete' }
         </style>
     </head>
     
     <body>
         <input style="display: none;" type="file" id="add-image" accept="image/jpeg, image/png, image/jpg">
         <a id="book-print-title"></a>
+        <a id="book-print-author"></a>
         
         <div id="strip-container">
             <div id="strip"><!-- MARKER:strip -->
                 <div>
                     <label id="logo" for="chk-conf" style="display: block; aspect-ratio: 1; padding: 0;">
-                        <img style="max-height: 100%" src="data:image/png;base64,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">
+                        <img style="max-height: 100%; background-color: var(--color-light); mix-blend-mode: screen;" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABhGlDQ1BJQ0MgcHJvZmlsZQAAKJF9kT1Iw0AcxV9TxaJVBzuIKGSoThbELxy1CkWoEGqFVh1MLv2CJg1Jiouj4Fpw8GOx6uDirKuDqyAIfoA4OjkpukiJ/0sKLWI9OO7Hu3uPu3eAUC0yzWobAzTdNhOxqJhKr4odr+hCAD0YwpTMLGNOkuJoOb7u4ePrXYRntT735+hWMxYDfCLxLDNMm3iDeHrTNjjvE4dYXlaJz4lHTbog8SPXFY/fOOdcFnhmyEwm5olDxGKuiZUmZnlTI54kDquaTvlCymOV8xZnrVhm9XvyFwYz+soy12kOIoZFLEGCCAVlFFCEjQitOikWErQfbeEfcP0SuRRyFcDIsYASNMiuH/wPfndrZSfGvaRgFGh/cZyPYaBjF6hVHOf72HFqJ4D/GbjSG/5SFZj5JL3S0MJHQO82cHHd0JQ94HIH6H8yZFN2JT9NIZsF3s/om9JA3y3Queb1Vt/H6QOQpK7iN8DBITCSo+z1Fu8ONPf275l6fz+OTnKyTvKP9wAAAAZiS0dEAP8A/wD/oL2nkwAAAAlwSFlzAAAuIwAALiMBeKU/dgAAAAd0SU1FB+YLCA4eNq/IzI0AAAAZdEVYdENvbW1lbnQAQ3JlYXRlZCB3aXRoIEdJTVBXgQ4XAAABjklEQVR42u2bMUrEQBSGvycLKcULbOkF9ASm8AxiabUX0JTpdvECW3kRa1vBeks7hcXWrZ7NBoIsi+NOksnO/+BBCJNk5mPel5lADHAyjhMyDwEQAAEQgKxjEtj+FnjpuY8zoEoFwIe7v/c5ejOrt4dVCgCaTp0Clx2Oe+3ubwDuvukaggdk6e4A08DrQvPe3WknUADz2M9KXoJmVjQzAaiBRW5vgbpLCJMI93gCVhHucw7c7ThfNTJ0900XTjjUAeXvev1PAuUuB7TOzYEithPGtBCquiiHsa0Eo0OI4YAbM7uI5IC/QojqhKTXAXvaRHHCmDdDUcphkvoo3d0C2m7MbBlSCtoOJ9qvKzMLvea52UAdA4DrbYbE61AzYAF8DQTq7NDlcAwAy74/krR2itMUAMzMbMgZMLgEK0Yceg1KgpKgJCgJSoKSoCQoCUqCkqAkKAlKgpKgJCgJSoKSoCQoCUqCkqAkKAlKgvvjG3hIbCzr3gC4+yfweAwzIPsSMPTjZN4hAAIgAAKQdfwAsFuCGcS+kBQAAAAASUVORK5CYII=">
                     </label>
                 </div>
                 <div>
@@ -1286,17 +1994,11 @@
                     <label for="conf-images">
                         Images
                     </label>
-                    <label for="conf-variables">
-                        Variables
-                    </label>
-                    <label for="conf-saving">
-                        Saving
-                    </label>
-                    <label for="conf-printing">
-                        Printing
+                    <label for="conf-templates">
+                        Templates
                     </label>
                     <label for="conf-misc">
-                        Other options
+                        Misc
                     </label>
                 </div>
                 <div class="tab-content">
@@ -1316,7 +2018,8 @@
                                 <div>
                                     <div onclick="Images.view('img-example');"></div>
                                     <div onclick="Images.rename('img-example');"></div>
-                                    <div onclick="Images.del('img-example')"></div>
+                                    <div onclick="Images.del('img-example');"></div>
+                                    <div onclick="Images.dl('img-example');"></div>
                                 </div>
                                 <div>
                                     img-example
@@ -1325,24 +2028,46 @@
                         </div>
                     </div>
                     
-                    <input name="conf" id="conf-variables" type="radio">
+                    <input name="conf" id="conf-templates" type="radio">
                     <div>
-                        <textarea id="variables" style="height: 100%; width: 100%; resize: none; border: none; padding: var(--sapced);">$example_var=CONTENT</textarea>
-                    </div>
-                    
-                    <input name="conf" id="conf-saving" type="radio">
-                    <div>
-                        <input type="checkbox" id="depopulate_sections_on_save"></input> Empty generated markdown to save space
-                    </div>
-                    
-                    <input name="conf" id="conf-printing" type="radio">
-                    <div>
-                        <button onclick="window.print();" style="height: 3em; aspect-ratio: 3;">Print</button>
+                        <textarea id="templates" style="height: 100%; width: 100%; resize: none; border: none; padding: var(--sapced);">
+$some_name=Content;
+
+$multiline=  
+Multi line  
+content  
+;
+
+$multiline_p(d=default value,e=,u)=  
+d:{d}  
+e:{e}  
+u:{u}  
+;
+</textarea>
                     </div>
                     
                     <input name="conf" id="conf-misc" type="radio">
                     <div>
-                        Title: <input oninput="document.querySelector('title').innerHTML = this.value; this.setAttribute('value', this.value) " value="Self Contained Self Editable HTML"></input>
+                        <button onclick="window.print();" style="height: 3em; aspect-ratio: 3;">Print</button>
+                        <hr/>
+                        <table>
+                            <tr>
+                                <td>Fullwidth editing mode</td>
+                                <td><input type="checkbox" oninput="selfstore(this); Sections.fw_edit(this.checked);"></input></td>
+                            </tr>
+                            <tr>
+                                <td>Empty generated markdown to save space</td>
+                                <td><input type="checkbox" oninput="selfstore(this);" id="depopulate_sections_on_save"></input></td>
+                            </tr>
+                            <tr>
+                                <td>HTML Title</td>
+                                <td><input id="title-edit" oninput="selfstore(this); set_title();" value="Self Contained Self Editable HTML" title="Leave empty to set active book as title"></input></td>
+                            </tr>
+                            <tr>
+                                <td>Author</td>
+                                <td><input id="author-edit" oninput="selfstore(this); set_author();" value="" title="Author"></input></td>
+                            </tr>
+                        </table>
                     </div>
                     
                 </div>
@@ -1354,274 +2079,11 @@
                 <div class="button" onclick="Sections.add_top();">+</div>
             </div>
         </div>
-        
-        <div><!-- MARKER:sec-intro -->
-            <div class="section" id="sscse" data-book="bdefault">
-                <input type="checkbox" id="editing-scse">
-                <div>
-                    <h1></h1>
-                    <div></div>
-                </div>
-                <label for="editing-scse"></label>
-                <div>
-                    <div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                    </div>
-                    <div>
-                        <input type="text" value="Self Contained Self Editable HTML">
-                        <textarea data-name="scse">
-This is a self contained file/app that uses html, css, and js with the library marked to enable simple editing, saving, and printing of documents.
-
-Read more bellow to get a better understanding of how this works.
-</textarea>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        
-        <div><!-- MARKER:sec-books -->
-            <div class="section" id="sbooks" data-book="bdefault">
-                <input type="checkbox" id="editing-sbooks">
-                <div>
-                    <h1></h1>
-                    <div></div>
-                </div>
-                <label for="editing-sbooks"></label>
-                <div>
-                    <div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                    </div>
-                    <div>
-                        <input type="text" value="Books">
-                        <textarea data-name="sbooks">
-The main unit of this app is a book.
-
-The selected book is at the top of the page. The currently selected book sould be 'Quick guide'.
-
-You can change name, delete, or add a new book using the buttons to the right of the selected book.
-
-Depending on the selected book sections for that book will be showed.
-</textarea>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        
-        <div><!-- MARKER:sec-sections -->
-            <div class="section" id="ssections" data-book="bdefault">
-                <input type="checkbox" id="editing-ssections">
-                <div>
-                    <h1></h1>
-                    <div></div>
-                </div>
-                <label for="editing-ssections"></label>
-                <div>
-                    <div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                    </div>
-                    <div>
-                        <input type="text" value="Sections">
-                        <textarea data-name="ssections">
-
-Everything is organized in sections. Sections have a title and markdown content. So far this is the third section. The others before being 'Books' and the intro.
-
-# Main Title
-
-The main title is the first thing in the section and is underlined by a double line.
-
-# Markdown Content
-
-Everything under the double lines of the title is the markdown content
-
-# Editing
-
-## Creating
-
-To add sections press the top or bottom '+' buttons.
-
-## Edit area
-
-To open the edit area click on the 'Edit' button on the right side of sections.
-
-### Deleting
-
-After opening the edit area press the '🗑' button. After deleting recovery is not possible.
-
-### Title
-
-The title is edited as a single line string at the top of the edit area.
-
-### Content
-
-The content is edited as markdown in a multi line textbox in the edit area below the title.
-
-## Moving
-
-To move sections use the up/down arrow buttons in the edit area.
-
-
-</textarea>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div><!-- MARKER:sec-saving -->
-            <div class="section" id="ssaving" data-book="bdefault">
-                <input type="checkbox" id="editing-ssaving">
-                <div>
-                    <h1></h1>
-                    <div></div>
-                </div>
-                <label for="editing-ssaving"></label>
-                <div>
-                    <div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                    </div>
-                    <div>
-                        <input type="text" value="Saving">
-                        <textarea data-name="ssaving">
-Saving is done with Ctrl + s. You can name the html file anything as long as it ends with '.html'. The resulting file will have the content and everything necesary to be opened in a browser.
-
-Any changes are not saved in any way untill pressing Ctrl + s.
-</textarea>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div><!-- MARKER:sec-images -->
-            <div class="section" id="simages" data-book="bdefault">
-                <input type="checkbox" id="editing-simages">
-                <div>
-                    <h1></h1>
-                    <div></div>
-                </div>
-                <label for="editing-simages"></label>
-                <div>
-                    <div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                    </div>
-                    <div>
-                        <input type="text" value="Images">
-                        <textarea data-name="simages">
-# Manging
-
-Adding, removing, and renaming images is done through the logo options drop down, under the 'Images' tab.
-
-# Usage
-
-To use the image 'img-example', in the raw content write ```    img[img-example]```, 
-the image will appear as
-
-img[img-example]
-
-</textarea>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div><!-- MARKER:sec-print -->
-            <div class="section" id="sprinting" data-book="bdefault">
-                <input type="checkbox" id="editing-sprinting">
-                <div>
-                    <h1></h1>
-                    <div></div>
-                </div>
-                <label for="editing-sprinting"></label>
-                <div>
-                    <div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                    </div>
-                    <div>
-                        <input type="text" value="Printing">
-                        <textarea data-name="sprinting">
-To print (to a printer or as PDF) press Ctrl + p. This will open the browsers print dialog.
-
-When printing the selected book, the title occupies the first page and appears framed. Also, each section begins on a new page.
-</textarea>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div><!-- MARKER:sec-print -->
-            <div class="section" id="sprinting" data-book="bdefault">
-                <input type="checkbox" id="editing-svariables">
-                <div>
-                    <h1></h1>
-                    <div></div>
-                </div>
-                <label for="editing-svariables"></label>
-                <div>
-                    <div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                    </div>
-                    <div>
-                        <input type="text" value="Variables">
-                        <textarea data-name="svariables">
-Variables contain text that replaces them in the parsed content, useful for snippets of frequently repeating text.
-
-# Defining
-
-They can be edited from the logo options drop down, under 'Variables' tab. They are defined in the form of ```$$[variable name]=[content]```. The name of a variable can only contain lowercase letters, numbers, and underscore(_).  
-**e.g.**  
-To define a variable named 'example_var' you should write  
-```$$example_var=CONTENT```  
-*Note: The variable content starts immediately after the = and ends with the new line, this **includes** any white space.*
-
-# Usage
-
-To use the variable 'example_var' write ```$$example_var``` in the raw content not immediately preceded by a $$ and followed by a non word character. To join with the next word end the variable name with # instead of a non word character.  
-**e.g.**  
-Raw | Parsed
-- | -
-```Using $$example_var.```       | Using $example_var.
-```Using $$$example_var.```      | Using $$example_var.
-```joined$$example_var#joined``` | joined$example_var#joined
-```jside$$example_var nonjside```| jside$example_var nonjside
-
-
-# Note about $$
-
-Since the start of a variable name is denoted by a dollar sign ($$) every chain of $$ in the content will have one of them removed. Single $$ in the raw content will be omitted in the parsed content.  
-**e.g.**  
-$$ -> *nothing*  
-$$$ -> $$  
-$$$$$ -> $$$$
-</textarea>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
+                
         <div class="noprint">
             <div id="add-bottom">
                 <div class="button" onclick="Sections.add_bottom();">+</div>
             </div>
         </div>
         
-
-
-
-
-
-
 </body></html>
